@@ -1,0 +1,103 @@
+# ==============================
+# Node.js (root, client, server)
+# ==============================
+node_modules/
+client/node_modules/
+server/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+
+# ==============================
+# React / Client build output
+# ==============================
+client/build/
+client/dist/
+client/.cache/
+client/.parcel-cache/
+client/.next/
+client/.vite/
+
+# ==============================
+# Server build output (if using TS)
+# ==============================
+server/dist/
+server/build/
+server/*.tsbuildinfo
+
+# ==============================
+# Environment variables
+# ==============================
+.env
+.env.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+.env.production
+.env.production.local
+client/.env*
+server/.env*
+*.env
+
+# ==============================
+# PostgreSQL
+# ==============================
+*.sql.gz
+*.dump
+*.backup
+pgdata/
+postgres-data/
+server/data/
+
+# ==============================
+# Logs
+# ==============================
+logs/
+*.log
+client/logs/
+server/logs/
+
+# ==============================
+# Testing / Coverage
+# ==============================
+coverage/
+client/coverage/
+server/coverage/
+.nyc_output/
+
+# ==============================
+# Editor / IDE
+# ==============================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ==============================
+# OS files
+# ==============================
+.DS_Store
+Thumbs.db
+
+# ==============================
+# Docker
+# ==============================
+docker-compose.override.yml
+
+# ==============================
+# Misc
+# ==============================
+*.tmp
+*.temp
+.eslintcache
+.stylelintcache
+
+# ==============================
+# Package manager locks (optional — uncomment to ignore)
+# ==============================
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
