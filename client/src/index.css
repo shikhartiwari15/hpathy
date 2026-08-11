@@ -357,6 +357,17 @@ table.grid tbody tr:hover { background: var(--surface-2); }
 .stock-block table.grid td.qty.low { color: var(--danger); }
 .stock-block table.grid td.total { text-align: center; font-weight: 700; color: var(--primary-strong); }
 .stock-block table.grid th.total-h { text-align: center; }
+.stock-block .no-stock { padding: 0 18px 18px; margin: 0; color: var(--muted); font-size: 13.5px; }
+.stock-block table.grid td.qty { position: relative; }
+.qty-cell { display: inline-flex; align-items: center; gap: 6px; }
+.qty-del {
+  display: none; align-items: center; justify-content: center; width: 17px; height: 17px;
+  border-radius: 50%; border: none; padding: 0; cursor: pointer;
+  background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger);
+}
+.qty-del:hover { background: color-mix(in srgb, var(--danger) 28%, transparent); }
+.qty-del:disabled { opacity: .5; cursor: default; }
+.stock-block table.grid td.qty:hover .qty-del { display: inline-flex; }
 
 /* ---------- Modal ---------- */
 .overlay { position: fixed; inset: 0; background: color-mix(in srgb, var(--ink) 46%, transparent); backdrop-filter: blur(3px); z-index: 60; display: flex; align-items: flex-end; justify-content: center; animation: overlay-in .2s ease; }

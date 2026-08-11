@@ -18,6 +18,7 @@ export default function StockPage() {
 
   const [addFor, setAddFor] = useState<StockGridMedicine | null>(null);
   const [minFor, setMinFor] = useState<StockGridMedicine | null>(null);
+  const [clearing, setClearing] = useState<string | null>(null);
 
   useEffect(() => { api.letters().then((ls) => setAvailable(new Set(ls))).catch(() => {}); }, []);
   useEffect(() => { api.lowStock().then(setLow).catch(() => {}); }, []);
@@ -35,6 +36,20 @@ export default function StockPage() {
   }, [search, letter]);
 
   const refreshLow = () => { api.lowStock().then(setLow).catch(() => {}); };
+
+  const clearCell = async (medicineId: number, potencyId: number, packSizeId: number, key: string) => {
+    if (!window.confirm('Remove this stock entry? This sets its quantity to 0.')) return;
+    setClearing(key);
+    try {
+      await api.setStock(medicineId, potencyId, 0, packSizeId);
+      load(search.trim(), letter);
+      refreshLow();
+    } catch (e) {
+      toast((e as Error).message, 'err');
+    } finally {
+      setClearing(null);
+    }
+  };
 
   const packs = grid?.pack_sizes ?? [];
 
@@ -84,56 +99,81 @@ export default function StockPage() {
           <p>No pack sizes configured. Add pack sizes under <b>Pack sizes</b> first.</p>
         </div>
       ) : (
-        grid.medicines.map((m) => (
-          <div key={m.id} className="stock-block">
-            <div className="head">
-              <span className="nm">
-                <Icon name="leaf" /> {m.name}
-                {m.common_name && <span className="muted" style={{ fontWeight: 400, fontSize: 14 }}>({m.common_name})</span>}
-                {m.low && <span className="chip chip-low">Low</span>}
-              </span>
-              <span className="actions">
-                <button className="btn btn-warn btn-sm" onClick={() => setMinFor(m)}><Icon name="alert" size={15} /> Min levels</button>
-                <button className="btn btn-outline btn-sm" onClick={() => setAddFor(m)}><Icon name="plus" size={15} /> Add stock</button>
-              </span>
-            </div>
-            <div className="table-wrap">
-              <table className="grid">
-                <thead>
-                  <tr>
-                    {packs.length > 1 && <th style={{ width: 90 }}>Pack</th>}
-                    {grid.potencies.map((p) => <th key={p.id} className="center">{p.name}</th>)}
-                    <th className="total-h">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {packs.map((ps) => {
-                    let rowTotal = 0;
-                    return (
-                      <tr key={ps.id}>
-                        {packs.length > 1 && (
-                          <td className="muted" style={{ fontSize: 12.5, fontWeight: 600 }}>{ps.name}</td>
-                        )}
-                        {grid.potencies.map((p) => {
-                          const cell = m.qty[p.id]?.[ps.id];
-                          const q = cell?.quantity ?? 0;
-                          rowTotal += q;
-                          const isLow = cell && cell.min_level > 0 && q < cell.min_level;
-                          return (
-                            <td key={p.id} className={`qty ${q === 0 ? 'zero' : ''} ${isLow ? 'low' : ''}`}>
-                              {q === 0 ? '·' : q}
-                            </td>
-                          );
-                        })}
-                        <td className="total">{rowTotal}</td>
+        grid.medicines.map((m) => {
+          // Only show pack sizes that actually have stock for this medicine.
+          const medPacks = packs.filter((ps) =>
+            grid.potencies.some((p) => (m.qty[p.id]?.[ps.id]?.quantity ?? 0) > 0)
+          );
+
+          return (
+            <div key={m.id} className="stock-block">
+              <div className="head">
+                <span className="nm">
+                  <Icon name="leaf" /> {m.name}
+                  {m.common_name && <span className="muted" style={{ fontWeight: 400, fontSize: 14 }}>({m.common_name})</span>}
+                  {m.low && <span className="chip chip-low">Low</span>}
+                </span>
+                <span className="actions">
+                  <button className="btn btn-warn btn-sm" onClick={() => setMinFor(m)}><Icon name="alert" size={15} /> Min levels</button>
+                  <button className="btn btn-outline btn-sm" onClick={() => setAddFor(m)}><Icon name="plus" size={15} /> Add stock</button>
+                </span>
+              </div>
+              {medPacks.length === 0 ? (
+                <p className="no-stock">No stock recorded yet.</p>
+              ) : (
+                <div className="table-wrap">
+                  <table className="grid">
+                    <thead>
+                      <tr>
+                        {packs.length > 1 && <th style={{ width: 90 }}>Pack</th>}
+                        {grid.potencies.map((p) => <th key={p.id} className="center">{p.name}</th>)}
+                        <th className="total-h">Total</th>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                    </thead>
+                    <tbody>
+                      {medPacks.map((ps) => {
+                        let rowTotal = 0;
+                        return (
+                          <tr key={ps.id}>
+                            {packs.length > 1 && (
+                              <td className="muted" style={{ fontSize: 12.5, fontWeight: 600 }}>{ps.name}</td>
+                            )}
+                            {grid.potencies.map((p) => {
+                              const cell = m.qty[p.id]?.[ps.id];
+                              const q = cell?.quantity ?? 0;
+                              rowTotal += q;
+                              const isLow = cell && cell.min_level > 0 && q < cell.min_level;
+                              const key = `${m.id}:${p.id}:${ps.id}`;
+                              return (
+                                <td key={p.id} className={`qty ${q === 0 ? 'zero' : ''} ${isLow ? 'low' : ''}`}>
+                                  {q === 0 ? '·' : (
+                                    <span className="qty-cell">
+                                      <span>{q}</span>
+                                      <button
+                                        type="button"
+                                        className="qty-del"
+                                        title="Remove this stock entry"
+                                        disabled={clearing === key}
+                                        onClick={() => clearCell(m.id, p.id, ps.id, key)}
+                                      >
+                                        <Icon name="x" size={11} />
+                                      </button>
+                                    </span>
+                                  )}
+                                </td>
+                              );
+                            })}
+                            <td className="total">{rowTotal}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
-          </div>
-        ))
+          );
+        })
       )}
 
       {addFor && grid && (
