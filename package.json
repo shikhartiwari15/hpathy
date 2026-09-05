@@ -1,0 +1,14 @@
+{
+  "name": "hpathy-app",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Materia Stock - single-service build (Express serves the built React client)",
+  "scripts": {
+    "build": "npm --prefix client install && npm --prefix client run build && npm --prefix server install",
+    "start": "npm --prefix server start"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
