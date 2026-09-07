@@ -1,4 +1,4 @@
-import { pool } from './db.js';
+import { pool } from "./db.js";
 
 /**
  * Lightweight, idempotent migrations that run on every server start.
@@ -8,8 +8,13 @@ import { pool } from './db.js';
 export async function ensureSchema() {
   const client = await pool.connect();
   try {
-    await client.query('CREATE SCHEMA IF NOT EXISTS materia');
-    await client.query('SET search_path TO materia, public');
+    await client.query("CREATE SCHEMA IF NOT EXISTS materia");
+    await client.query("SET search_path TO materia, public");
+    // Trigram fuzzy matching for the label-scan feature
+    await client.query("CREATE EXTENSION IF NOT EXISTS pg_trgm");
+    await client.query(
+      "CREATE INDEX IF NOT EXISTS medicines_name_trgm ON medicines USING gin (lower(name) gin_trgm_ops)",
+    );
 
     // Core tables (no-op if they already exist)
     await client.query(`
@@ -46,9 +51,13 @@ export async function ensureSchema() {
     `);
 
     // Restore columns that an intermediate schema may have dropped
-    await client.query('ALTER TABLE medicines ADD COLUMN IF NOT EXISTS pack_size TEXT');
-    await client.query('ALTER TABLE medicines ADD COLUMN IF NOT EXISTS pack_size_2 TEXT');
-    await client.query('ALTER TABLE medicines DROP COLUMN IF EXISTS mrp');
+    await client.query(
+      "ALTER TABLE medicines ADD COLUMN IF NOT EXISTS pack_size TEXT",
+    );
+    await client.query(
+      "ALTER TABLE medicines ADD COLUMN IF NOT EXISTS pack_size_2 TEXT",
+    );
+    await client.query("ALTER TABLE medicines DROP COLUMN IF EXISTS mrp");
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS stock (
@@ -69,7 +78,7 @@ export async function ensureSchema() {
     `);
     if (!col.rowCount) {
       await client.query(
-        'ALTER TABLE stock ADD COLUMN pack_size_id INTEGER REFERENCES pack_sizes(id) ON DELETE CASCADE'
+        "ALTER TABLE stock ADD COLUMN pack_size_id INTEGER REFERENCES pack_sizes(id) ON DELETE CASCADE",
       );
     }
 
@@ -117,10 +126,16 @@ export async function ensureSchema() {
         SET pack_size_id = (SELECT id FROM pack_sizes ORDER BY sort_order ASC, id ASC LIMIT 1)
         WHERE pack_size_id IS NULL
       `);
-      await client.query('ALTER TABLE stock DROP CONSTRAINT IF EXISTS stock_medicine_id_potency_id_key');
-      await client.query('ALTER TABLE stock DROP CONSTRAINT IF EXISTS stock_medicine_id_potency_id_pack_no_key');
-      await client.query('ALTER TABLE stock DROP CONSTRAINT IF EXISTS stock_pack_no_check');
-      await client.query('ALTER TABLE stock DROP COLUMN IF EXISTS pack_no');
+      await client.query(
+        "ALTER TABLE stock DROP CONSTRAINT IF EXISTS stock_medicine_id_potency_id_key",
+      );
+      await client.query(
+        "ALTER TABLE stock DROP CONSTRAINT IF EXISTS stock_medicine_id_potency_id_pack_no_key",
+      );
+      await client.query(
+        "ALTER TABLE stock DROP CONSTRAINT IF EXISTS stock_pack_no_check",
+      );
+      await client.query("ALTER TABLE stock DROP COLUMN IF EXISTS pack_no");
     }
 
     // Link any stock rows still missing pack_size_id to the medicine's pack_size label
@@ -199,10 +214,18 @@ export async function ensureSchema() {
     }
 
     // Indexes
-    await client.query('CREATE INDEX IF NOT EXISTS stock_medicine_idx ON stock (medicine_id)');
-    await client.query('CREATE INDEX IF NOT EXISTS stock_potency_idx ON stock (potency_id)');
-    await client.query('CREATE INDEX IF NOT EXISTS stock_pack_size_idx ON stock (pack_size_id)');
-    await client.query('CREATE INDEX IF NOT EXISTS medicines_name_idx ON medicines (name)');
+    await client.query(
+      "CREATE INDEX IF NOT EXISTS stock_medicine_idx ON stock (medicine_id)",
+    );
+    await client.query(
+      "CREATE INDEX IF NOT EXISTS stock_potency_idx ON stock (potency_id)",
+    );
+    await client.query(
+      "CREATE INDEX IF NOT EXISTS stock_pack_size_idx ON stock (pack_size_id)",
+    );
+    await client.query(
+      "CREATE INDEX IF NOT EXISTS medicines_name_idx ON medicines (name)",
+    );
     await client.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS medicines_name_lower_uk ON medicines (lower(name))
     `);
@@ -211,7 +234,6 @@ export async function ensureSchema() {
         ON medicines (lower(abbreviation))
         WHERE abbreviation IS NOT NULL AND btrim(abbreviation) <> ''
     `);
-
 
     // Normalize legacy material_type values to the three allowed types
     await client.query(`
@@ -233,8 +255,7 @@ export async function ensureSchema() {
          OR lower(material_type) LIKE '%tincture%'
     `);
 
-    console.log('[migrate] Schema is up to date (pack_size columns ensured).');
-
+    console.log("[migrate] Schema is up to date (pack_size columns ensured).");
   } finally {
     client.release();
   }
