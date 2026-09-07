@@ -5,13 +5,28 @@ import Modal from './Modal';
 import Icon from './Icon';
 
 // Downscale client-side before upload — keeps the request small and fast on mobile data.
+// Phone camera photos are often 12MP+; decoding one at full resolution before shrinking it
+// can allocate 40-50MB+ for the raw bitmap alone, which crashes the tab on lower-RAM phones
+// (shows up as a blank page). Passing resizeWidth tells the browser to decode straight to a
+// small bitmap instead, so peak memory stays low regardless of the source photo's size.
 async function resize(file: File, maxDim = 1280): Promise<Blob> {
-  const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  let bmp: ImageBitmap;
+  try {
+    bmp = await createImageBitmap(file, {
+      imageOrientation: 'from-image',
+      resizeWidth: maxDim,
+      resizeQuality: 'medium',
+    });
+  } catch {
+    // Older browsers that don't support resize options — fall back to a full decode.
+    bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  }
   const s = Math.min(1, maxDim / Math.max(bmp.width, bmp.height));
   const c = document.createElement('canvas');
   c.width = Math.round(bmp.width * s);
   c.height = Math.round(bmp.height * s);
   c.getContext('2d')!.drawImage(bmp, 0, 0, c.width, c.height);
+  bmp.close(); // release the decoded bitmap immediately rather than waiting on GC
   return new Promise((r) => c.toBlob((b) => r(b!), 'image/jpeg', 0.85));
 }
 
