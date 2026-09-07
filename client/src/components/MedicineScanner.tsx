@@ -64,8 +64,8 @@ export default function ScanMedicineModal({ onClose, onAdded }: {
         if (videoRef.current) videoRef.current.srcObject = stream;
         setCamReady(true);
       })
-      .catch((err) => setCamError(
-        err.name === 'NotAllowedError'
+      .catch((err: unknown) => setCamError(
+        err instanceof DOMException && err.name === 'NotAllowedError'
           ? 'Camera permission was denied. Allow camera access for this site and try again.'
           : 'Could not open the camera on this device.'
       ));
