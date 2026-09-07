@@ -1,32 +1,34 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import type { IdentifyResponse } from '../types';
 import Modal from './Modal';
 import Icon from './Icon';
 
-// Downscale client-side before upload — keeps the request small and fast on mobile data.
-// Phone camera photos are often 12MP+; decoding one at full resolution before shrinking it
-// can allocate 40-50MB+ for the raw bitmap alone, which crashes the tab on lower-RAM phones
-// (shows up as a blank page). Passing resizeWidth tells the browser to decode straight to a
-// small bitmap instead, so peak memory stays low regardless of the source photo's size.
-async function resize(file: File, maxDim = 1280): Promise<Blob> {
-  let bmp: ImageBitmap;
-  try {
-    bmp = await createImageBitmap(file, {
-      imageOrientation: 'from-image',
-      resizeWidth: maxDim,
-      resizeQuality: 'medium',
-    });
-  } catch {
-    // Older browsers that don't support resize options — fall back to a full decode.
-    bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
-  }
-  const s = Math.min(1, maxDim / Math.max(bmp.width, bmp.height));
+// Capture straight from the live video stream at a capped resolution, rather than
+// handing off to the OS camera app. Requesting a modest ideal resolution up front means
+// we never decode a huge full-res bitmap in the first place — the browser negotiates a
+// smaller stream directly with the camera. This sidesteps the Android "low memory" intent
+// failure entirely (that bug happens when a full-res photo is handed back through the OS
+// camera app, before it ever reaches the page).
+const CAPTURE_DIM = 1280;
+
+async function openCamera(): Promise<MediaStream> {
+  return navigator.mediaDevices.getUserMedia({
+    video: {
+      facingMode: 'environment',
+      width: { ideal: CAPTURE_DIM },
+      height: { ideal: CAPTURE_DIM },
+    },
+    audio: false,
+  });
+}
+
+function captureFrame(video: HTMLVideoElement): Promise<Blob> {
+  const s = Math.min(1, CAPTURE_DIM / Math.max(video.videoWidth, video.videoHeight));
   const c = document.createElement('canvas');
-  c.width = Math.round(bmp.width * s);
-  c.height = Math.round(bmp.height * s);
-  c.getContext('2d')!.drawImage(bmp, 0, 0, c.width, c.height);
-  bmp.close(); // release the decoded bitmap immediately rather than waiting on GC
+  c.width = Math.round(video.videoWidth * s);
+  c.height = Math.round(video.videoHeight * s);
+  c.getContext('2d')!.drawImage(video, 0, 0, c.width, c.height);
   return new Promise((r) => c.toBlob((b) => r(b!), 'image/jpeg', 0.85));
 }
 
@@ -34,7 +36,10 @@ export default function ScanMedicineModal({ onClose, onAdded }: {
   onClose: () => void;
   onAdded: (label: string) => void;
 }) {
-  const fileRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const [camReady, setCamReady] = useState(false);
+  const [camError, setCamError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<IdentifyResponse | null>(null);
@@ -42,17 +47,40 @@ export default function ScanMedicineModal({ onClose, onAdded }: {
   const [potId, setPotId] = useState<number | null>(null);
   const [packId, setPackId] = useState<number | null>(null);
 
+  const stopCamera = () => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+  };
+
+  // Camera opens as soon as the modal mounts, and stays open (video keeps running
+  // in the background) through the scan/result step, so "Rescan" can reuse it instantly
+  // without asking for camera permission again.
+  useEffect(() => {
+    let cancelled = false;
+    openCamera()
+      .then((stream) => {
+        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
+        streamRef.current = stream;
+        if (videoRef.current) videoRef.current.srcObject = stream;
+        setCamReady(true);
+      })
+      .catch((err) => setCamError(
+        err.name === 'NotAllowedError'
+          ? 'Camera permission was denied. Allow camera access for this site and try again.'
+          : 'Could not open the camera on this device.'
+      ));
+    return () => { cancelled = true; stopCamera(); };
+  }, []);
+
   const reset = () => { setData(null); setError(null); };
 
-  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
+  async function onCapture() {
+    if (!videoRef.current || !camReady) return;
     setBusy(true);
     setError(null);
     setData(null);
     try {
-      const img = await resize(file);
+      const img = await captureFrame(videoRef.current);
       const d = await api.identifyMedicine(img);
       setData(d);
       setMedId(d.medicine?.id ?? d.alternatives[0]?.id ?? null);
@@ -102,18 +130,43 @@ export default function ScanMedicineModal({ onClose, onAdded }: {
       {!data && (
         <>
           <p className="muted" style={{ fontSize: 13.5, marginTop: -4 }}>
-            Photograph the medicine's label — the name and potency are read automatically
-            and matched against your catalog.
+            Point the camera at the medicine's label — the name and potency are read
+            automatically and matched against your catalog.
           </p>
-          <button className="btn btn-primary" disabled={busy} onClick={() => fileRef.current?.click()}
+
+          {camError ? (
+            <p style={{ color: 'var(--danger)', fontSize: 13.5, margin: 0 }}>{camError}</p>
+          ) : (
+            <div style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', background: '#000' }}>
+              <video
+                ref={(el) => {
+                  videoRef.current = el;
+                  // The result screen unmounts this <video>; when Rescan brings it back,
+                  // reattach the still-running stream instead of waiting on the mount effect.
+                  if (el && streamRef.current && el.srcObject !== streamRef.current) {
+                    el.srcObject = streamRef.current;
+                  }
+                }}
+                autoPlay
+                playsInline
+                muted
+                style={{ width: '100%', display: 'block', aspectRatio: '1 / 1', objectFit: 'cover' }}
+              />
+              {!camReady && (
+                <div style={{
+                  position: 'absolute', inset: 0, display: 'flex', alignItems: 'center',
+                  justifyContent: 'center', color: 'var(--ink)',
+                }}>
+                  <span className="spinner" />
+                </div>
+              )}
+            </div>
+          )}
+
+          <button className="btn btn-primary" disabled={busy || !camReady || !!camError} onClick={onCapture}
             style={{ width: '100%' }}>
-            {busy ? <><span className="spinner" /> Reading label…</> : <><Icon name="camera" size={16} /> Take or choose a photo</>}
+            {busy ? <><span className="spinner" /> Reading label…</> : <><Icon name="camera" size={16} /> Capture</>}
           </button>
-          {/* No `capture` attribute: forcing the native camera intent is what triggers
-              Android's "low memory" failure on many devices when handing the full-res
-              photo back to the page. Without it, mobile Chrome shows its normal picker
-              (Camera / Photos / Files), which doesn't go through that broken path. */}
-          <input ref={fileRef} type="file" accept="image/*" hidden onChange={onFile} />
         </>
       )}
 
