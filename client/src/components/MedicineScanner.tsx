@@ -1,211 +1,160 @@
-import { useState } from "react";
+import { useRef, useState } from 'react';
+import { api } from '../api';
+import type { IdentifyResponse } from '../types';
+import Modal from './Modal';
+import Icon from './Icon';
 
-type Med = {
-  id: number;
-  name: string;
-  common_name?: string;
-  abbreviation?: string;
-  score?: number;
-  exact?: boolean;
-};
-type Ref = { id: number; name: string };
-type Resp = {
-  scan: { name: string; potency: string; confidence: number };
-  medicine: Med | null;
-  alternatives: Med[];
-  matchedPotencyId: number | null;
-  potencies: Ref[];
-  packSizes: Ref[];
-  defaultPackSizeId: number | null;
-  currentQty: number | null;
-};
-
+// Downscale client-side before upload — keeps the request small and fast on mobile data.
 async function resize(file: File, maxDim = 1280): Promise<Blob> {
-  const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+  const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
   const s = Math.min(1, maxDim / Math.max(bmp.width, bmp.height));
-  const c = document.createElement("canvas");
+  const c = document.createElement('canvas');
   c.width = Math.round(bmp.width * s);
   c.height = Math.round(bmp.height * s);
-  c.getContext("2d")!.drawImage(bmp, 0, 0, c.width, c.height);
-  return new Promise((r) => c.toBlob((b) => r(b!), "image/jpeg", 0.85));
+  c.getContext('2d')!.drawImage(bmp, 0, 0, c.width, c.height);
+  return new Promise((r) => c.toBlob((b) => r(b!), 'image/jpeg', 0.85));
 }
 
-export default function MedicineScanner() {
+export default function ScanMedicineModal({ onClose, onAdded }: {
+  onClose: () => void;
+  onAdded: (label: string) => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
-  const [data, setData] = useState<Resp | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [data, setData] = useState<IdentifyResponse | null>(null);
   const [medId, setMedId] = useState<number | null>(null);
   const [potId, setPotId] = useState<number | null>(null);
   const [packId, setPackId] = useState<number | null>(null);
 
+  const reset = () => { setData(null); setError(null); };
+
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
     setBusy(true);
-    setMsg(null);
+    setError(null);
     setData(null);
     try {
-      const fd = new FormData();
-      fd.append("image", await resize(file), "scan.jpg");
-      const res = await fetch("/api/identify", { method: "POST", body: fd });
-      if (!res.ok) throw new Error((await res.json()).error || "Scan failed");
-      const d: Resp = await res.json();
+      const img = await resize(file);
+      const d = await api.identifyMedicine(img);
       setData(d);
       setMedId(d.medicine?.id ?? d.alternatives[0]?.id ?? null);
       setPotId(d.matchedPotencyId ?? null);
       setPackId(d.defaultPackSizeId ?? null);
-    } catch (err: any) {
-      setMsg(err.message);
+      if (!d.scan.name) setError('Could not read a homeopathy label in that photo — try again with better light.');
+    } catch (err) {
+      setError((err as Error).message);
     } finally {
       setBusy(false);
-      e.target.value = "";
     }
   }
 
-  async function addOne() {
-    if (!medId || !potId || !packId) {
-      setMsg("Pick medicine, potency and pack size first");
-      return;
-    }
+  async function confirm() {
+    if (!medId || !potId || !packId) { setError('Pick medicine, potency and pack size first'); return; }
     setBusy(true);
+    setError(null);
     try {
-      const res = await fetch("/api/stock/add", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          medicine_id: medId,
-          potency_id: potId,
-          pack_size_id: packId,
-          quantity: 1,
-        }),
-      });
-      if (!res.ok)
-        throw new Error((await res.json()).error || "Could not update stock");
-      const row = await res.json();
-      const medName =
-        data?.alternatives.find((m) => m.id === medId)?.name ?? "Medicine";
-      const potName = data?.potencies.find((p) => p.id === potId)?.name ?? "";
-      setMsg(`✓ ${medName} ${potName} — now ${row.quantity} in stock`);
-      setData(null);
-    } catch (err: any) {
-      setMsg(err.message);
+      const row: any = await api.addStock(medId, potId, 1, packId);
+      const medName = data?.alternatives.find((m) => m.id === medId)?.name ?? 'Medicine';
+      const potName = data?.potencies.find((p) => p.id === potId)?.name ?? '';
+      onAdded(`${medName} ${potName} — now ${row.quantity} in stock`);
+    } catch (err) {
+      setError((err as Error).message);
     } finally {
       setBusy(false);
     }
   }
-
-  const isDefault =
-    !!data &&
-    medId === data.medicine?.id &&
-    potId === data.matchedPotencyId &&
-    packId === data.defaultPackSizeId;
 
   return (
-    <div style={{ display: "grid", gap: 12, maxWidth: 440 }}>
-      <label
-        style={{
-          padding: 14,
-          border: "1px solid #ccc",
-          borderRadius: 8,
-          textAlign: "center",
-          cursor: "pointer",
-        }}
-      >
-        📷 Scan medicine
-        <input
-          type="file"
-          accept="image/*"
-          capture="environment"
-          onChange={onFile}
-          style={{ display: "none" }}
-        />
-      </label>
+    <Modal
+      title="Scan medicine"
+      onClose={onClose}
+      footer={
+        data && data.alternatives.length > 0 ? (
+          <>
+            <button className="btn btn-ghost" onClick={reset}>Rescan</button>
+            <button className="btn btn-primary" disabled={busy || !medId || !potId || !packId} onClick={confirm}>
+              {busy ? <><span className="spinner" /> Adding…</> : 'Confirm — add 1'}
+            </button>
+          </>
+        ) : (
+          <button className="btn btn-ghost" onClick={onClose}>Close</button>
+        )
+      }
+    >
+      {!data && (
+        <>
+          <p className="muted" style={{ fontSize: 13.5, marginTop: -4 }}>
+            Photograph the medicine's label — the name and potency are read automatically
+            and matched against your catalog.
+          </p>
+          <button className="btn btn-primary" disabled={busy} onClick={() => fileRef.current?.click()}
+            style={{ width: '100%' }}>
+            {busy ? <><span className="spinner" /> Reading label…</> : <><Icon name="camera" size={16} /> Take or choose a photo</>}
+          </button>
+          <input ref={fileRef} type="file" accept="image/*" capture="environment" hidden onChange={onFile} />
+        </>
+      )}
 
-      {busy && <p>Working…</p>}
-      {msg && <p>{msg}</p>}
+      {error && (
+        <p style={{ color: 'var(--danger)', fontSize: 13.5, margin: 0 }}>{error}</p>
+      )}
 
       {data && (
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: 8,
-            padding: 12,
-            display: "grid",
-            gap: 8,
-          }}
-        >
-          <p style={{ margin: 0, color: "#666" }}>
-            Read: <b>{data.scan.name || "—"}</b> {data.scan.potency}
-            {data.scan.confidence < 0.6 &&
-              data.scan.name &&
-              " · low confidence, check below"}
+        <div style={{ display: 'grid', gap: 14 }}>
+          <p className="muted" style={{ fontSize: 13.5, margin: 0 }}>
+            Read: <b style={{ color: 'var(--ink)' }}>{data.scan.name || '—'}</b> {data.scan.potency}
+            {data.scan.confidence < 0.6 && data.scan.name && (
+              <span className="chip chip-low" style={{ marginLeft: 8 }}>Low confidence — check below</span>
+            )}
           </p>
 
           {data.alternatives.length === 0 ? (
-            <p style={{ color: "crimson" }}>
-              No matching medicine in your catalog.
+            <p style={{ color: 'var(--danger)', fontSize: 13.5, margin: 0 }}>
+              No matching medicine in your catalog. Add it under <b>Manage</b> first, then rescan.
             </p>
           ) : (
-            <label>
-              Medicine
-              <select
-                value={medId ?? ""}
-                onChange={(e) => setMedId(Number(e.target.value))}
-              >
-                {data.alternatives.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <>
+              <div className="field">
+                <label>Medicine</label>
+                <select className="select" value={medId ?? ''} onChange={(e) => setMedId(Number(e.target.value))}>
+                  {data.alternatives.map((m) => (
+                    <option key={m.id} value={m.id}>{m.name}{m.exact ? '' : ' (closest match)'}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-grid">
+                <div className="field">
+                  <label>Potency</label>
+                  <select className="select" value={potId ?? ''} onChange={(e) => setPotId(Number(e.target.value))}>
+                    <option value="" disabled>Select…</option>
+                    {data.potencies.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label>Pack size</label>
+                  <select className="select" value={packId ?? ''} onChange={(e) => setPackId(Number(e.target.value))}>
+                    <option value="" disabled>Select…</option>
+                    {data.packSizes.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {medId === data.medicine?.id && potId === data.matchedPotencyId && packId === data.defaultPackSizeId
+                && data.currentQty !== null && (
+                <p className="muted" style={{ fontSize: 13, margin: 0 }}>Currently {data.currentQty} in stock</p>
+              )}
+            </>
           )}
-
-          <label>
-            Potency
-            <select
-              value={potId ?? ""}
-              onChange={(e) => setPotId(Number(e.target.value))}
-            >
-              <option value="" disabled>
-                Select…
-              </option>
-              {data.potencies.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            Pack size
-            <select
-              value={packId ?? ""}
-              onChange={(e) => setPackId(Number(e.target.value))}
-            >
-              <option value="" disabled>
-                Select…
-              </option>
-              {data.packSizes.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          {isDefault && data.currentQty !== null && (
-            <p style={{ margin: 0, color: "#666" }}>
-              Currently {data.currentQty} in stock
-            </p>
-          )}
-
-          <button disabled={busy} onClick={addOne}>
-            Confirm — add 1
-          </button>
         </div>
       )}
-    </div>
+    </Modal>
   );
 }

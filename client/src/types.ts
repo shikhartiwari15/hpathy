@@ -113,3 +113,24 @@ export interface UploadNeedsResolution {
 }
 
 export type UploadOutcome = UploadResult | UploadNeedsResolution;
+
+// Vision-scan (/api/identify) response
+export interface IdentifyMatch {
+  id: number;
+  name: string;
+  common_name?: string;
+  abbreviation?: string;
+  score?: number;
+  exact?: boolean;
+}
+
+export interface IdentifyResponse {
+  scan: { name: string; potency: string; confidence: number };
+  medicine: IdentifyMatch | null;
+  alternatives: IdentifyMatch[];
+  matchedPotencyId: number | null;
+  potencies: { id: number; name: string }[];
+  packSizes: { id: number; name: string }[];
+  defaultPackSizeId: number | null;
+  currentQty: number | null;
+}

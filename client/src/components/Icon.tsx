@@ -20,6 +20,7 @@ const PATHS: Record<string, JSX.Element> = {
   sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4" /></>,
   x: <path d="M18 6 6 18M6 6l12 12" />,
   check: <path d="M20 6 9 17l-5-5" />,
+  camera: <><path d="M4 8h3l2-2h6l2 2h3v11H4z" /><circle cx="12" cy="13.5" r="3.5" /></>,
 };
 
 export default function Icon({ name, size = 20, ...rest }: { name: keyof typeof PATHS | string; size?: number } & SVGProps<SVGSVGElement>) {

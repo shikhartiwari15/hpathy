@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { StockGrid, StockGridMedicine, LowStockItem } from '../types';
 import Modal from '../components/Modal';
+import ScanMedicineModal from '../components/MedicineScanner';
 import { useToast } from '../components/Toast';
 import Icon from '../components/Icon';
 
@@ -19,6 +20,7 @@ export default function StockPage() {
   const [addFor, setAddFor] = useState<StockGridMedicine | null>(null);
   const [minFor, setMinFor] = useState<StockGridMedicine | null>(null);
   const [clearing, setClearing] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
 
   useEffect(() => { api.letters().then((ls) => setAvailable(new Set(ls))).catch(() => {}); }, []);
   useEffect(() => { api.lowStock().then(setLow).catch(() => {}); }, []);
@@ -60,6 +62,9 @@ export default function StockPage() {
           <h1><Icon name="box" /> Stock Management</h1>
           <p>View stock levels and add stock to any medicine / potency / pack size.</p>
         </div>
+        <button className="btn btn-primary" onClick={() => setScanning(true)}>
+          <Icon name="camera" size={17} /> Scan medicine
+        </button>
       </div>
 
       {low.length > 0 && (
@@ -176,6 +181,12 @@ export default function StockPage() {
         })
       )}
 
+      {scanning && (
+        <ScanMedicineModal
+          onClose={() => setScanning(false)}
+          onAdded={(label) => { setScanning(false); toast(label); load(search.trim(), letter); refreshLow(); }}
+        />
+      )}
       {addFor && grid && (
         <AddStockModal
           medicine={addFor}

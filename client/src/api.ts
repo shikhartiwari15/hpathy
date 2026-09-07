@@ -1,6 +1,6 @@
 import type {
   Medicine, MedicineListItem, Potency, PackSize, StockGrid, LowStockItem,
-  AbbrResolution, UploadOutcome,
+  AbbrResolution, UploadOutcome, IdentifyResponse,
 } from './types';
 
 const BASE = '/api';
@@ -140,4 +140,16 @@ export const api = {
   setMinLevels: (medicine_id: number, levels: Record<string, number>) =>
     request(`/stock/min-levels`, { method: 'PUT', body: JSON.stringify({ medicine_id, levels }) }),
   lowStock: () => request<LowStockItem[]>('/stock/low'),
+
+  // Vision scan — reads a homeopathy label via Gemini and matches it against the catalog.
+  identifyMedicine: (image: Blob) => {
+    const fd = new FormData();
+    fd.append('image', image, 'scan.jpg');
+    return fetch(`${BASE}/identify`, { method: 'POST', body: fd })
+      .then(async (r) => {
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.error || 'Scan failed');
+        return data as IdentifyResponse;
+      });
+  },
 };
