@@ -109,7 +109,11 @@ export default function ScanMedicineModal({ onClose, onAdded }: {
             style={{ width: '100%' }}>
             {busy ? <><span className="spinner" /> Reading label…</> : <><Icon name="camera" size={16} /> Take or choose a photo</>}
           </button>
-          <input ref={fileRef} type="file" accept="image/*" capture="environment" hidden onChange={onFile} />
+          {/* No `capture` attribute: forcing the native camera intent is what triggers
+              Android's "low memory" failure on many devices when handing the full-res
+              photo back to the page. Without it, mobile Chrome shows its normal picker
+              (Camera / Photos / Files), which doesn't go through that broken path. */}
+          <input ref={fileRef} type="file" accept="image/*" hidden onChange={onFile} />
         </>
       )}
 
