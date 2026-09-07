@@ -36,7 +36,7 @@ export default function ScanMedicineModal({ onClose, onAdded }: {
   onClose: () => void;
   onAdded: (label: string) => void;
 }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [camReady, setCamReady] = useState(false);
   const [camError, setCamError] = useState<string | null>(null);
