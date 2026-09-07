@@ -5,7 +5,7 @@ import { pool } from '../db.js';
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } });
 
-const MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash'; // retires Oct 16 2026 — bump via env then
+const MODEL = process.env.GEMINI_MODEL || 'gemini-3.6-flash'; // retires Oct 16 2026 — bump via env then
 const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 
 const PROMPT = `Read the label on this homeopathy medicine and return ONLY:
